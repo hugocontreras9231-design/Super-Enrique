@@ -4,101 +4,172 @@ const ctx = canvas.getContext("2d");
 canvas.width = 500;
 canvas.height = 300;
 
-// Mundo
 const gravity = 0.5;
 
-// Mario
+// JUGADOR
 const player = {
-    x: 50,
+    x: 80,   // Mario se mantiene cerca del inicio
     y: 0,
     w: 20,
     h: 30,
     vx: 0,
     vy: 0,
-    speed: 2.2,
-    jumping: false
+    speed: 2.5,
+    jumping: false,
+    alive: true,
+    coins: 0
 };
 
-// Plataforma principal (suelo)
-const ground = {
-    x: 0,
-    y: 260,
-    w: canvas.width,
-    h: 40
-};
+// MUNDO
+let worldX = 0; // Scroll horizontal
 
-// Plataforma extra estilo Mario
-const platform = {
-    x: 200,
-    y: 180,
-    w: 100,
-    h: 20
-};
+// Piso
+const ground = [
+    { x: 0, y: 260, w: 2000, h: 40 } // mundo largo
+];
 
-// Inputs
+// Plataformas
+const platforms = [
+    { x: 300, y: 210, w: 80, h: 20 },
+    { x: 500, y: 170, w: 80, h: 20 },
+    { x: 750, y: 200, w: 100, h: 20 }
+];
+
+// Monedas
+const coins = [
+    { x: 350, y: 180, collected: false },
+    { x: 520, y: 140, collected: false },
+    { x: 780, y: 170, collected: false }
+];
+
+// Enemigos (Goombas)
+const enemies = [
+    { x: 430, y: 230, w: 20, h: 20, vx: -1 },
+    { x: 900, y: 230, w: 20, h: 20, vx: 1 }
+];
+
+// INPUT
 const keys = {};
 document.addEventListener("keydown", (e) => keys[e.key] = true);
-document.addEventListener("keyup", (e) => keys[e.key] = false);
+document.addEventListener("keyup",   (e) => keys[e.key] = false);
 
 function movePlayer() {
-    // Movimiento horizontal
+    if (!player.alive) return;
+
     player.vx = 0;
-    if (keys["ArrowLeft"]) player.vx = -player.speed;
+    if (keys["ArrowLeft"])  player.vx = -player.speed;
     if (keys["ArrowRight"]) player.vx = player.speed;
 
-    // Salto
-    if (keys[" "]) { // Space
-        if (!player.jumping) {
-            player.vy = -10;
-            player.jumping = true;
-        }
+    if (keys[" "] && !player.jumping) {
+        player.vy = -10;
+        player.jumping = true;
     }
 
-    // Aplicar movimiento
-    player.x += player.vx;
+    // Movimiento vertical
     player.vy += gravity;
     player.y += player.vy;
 
-    // Limite de pantalla (evita que Mario se vaya)
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+    // Movimiento horizontal con scroll
+    worldX -= player.vx; // mueve el mundo, no a Mario
 
-    collide(player, ground);
-    collide(player, platform);
+    // Colisión con piso y plataformas
+    collideList(player, ground);
+    collideList(player, platforms);
+
+    // Monedas
+    for (let c of coins) {
+        if (!c.collected && checkHit(player, { x: c.x, y: c.y, w: 10, h: 10 })) {
+            c.collected = true;
+            player.coins++;
+        }
+    }
+
+    // Enemigos
+    for (let e of enemies) {
+        e.x += e.vx;
+
+        // límites simples
+        if (e.x < 400) e.vx = 1;
+        if (e.x > 950) e.vx = -1;
+
+        if (checkHit(player, e)) {
+            // Mario cae encima → mata
+            if (player.vy > 0) {
+                e.dead = true;
+                e.vx = 0;
+            } else {
+                // Toca lateral → muere Mario
+                player.alive = false;
+            }
+        }
+    }
 }
 
-function collide(p, obj) {
-    // Colisión vertical (caída)
-    if (
-        p.x < obj.x + obj.w &&
-        p.x + p.w > obj.x &&
-        p.y + p.h > obj.y &&
-        p.y + p.h < obj.y + obj.h
-    ) {
-        p.y = obj.y - p.h;
-        p.vy = 0;
-        p.jumping = false;
+function collideList(p, objs) {
+    for (let o of objs) {
+        if (
+            p.x + p.w > o.x + worldX &&
+            p.x < o.x + o.w + worldX &&
+            p.y + p.h > o.y &&
+            p.y + p.h < o.y + o.h
+        ) {
+            p.y = o.y - p.h;
+            p.vy = 0;
+            p.jumping = false;
+        }
     }
+}
+
+function checkHit(a, b) {
+    return (
+        a.x + a.w > b.x + worldX &&
+        a.x < b.x + b.w + worldX &&
+        a.y + a.h > b.y &&
+        a.y < b.y + b.h
+    );
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Fondo
-    ctx.fillStyle = "#9cdcff";
+    ctx.fillStyle = "#87cefa";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Suelo
     ctx.fillStyle = "#654321";
-    ctx.fillRect(ground.x, ground.y, ground.w, ground.h);
+    for (let g of ground) {
+        ctx.fillRect(g.x + worldX, g.y, g.w, g.h);
+    }
 
-    // Plataforma estilo Mario
+    // Plataformas
     ctx.fillStyle = "#b5651d";
-    ctx.fillRect(platform.x, platform.y, platform.w, platform.h);
+    for (let p of platforms) {
+        ctx.fillRect(p.x + worldX, p.y, p.w, p.h);
+    }
+
+    // Monedas
+    ctx.fillStyle = "gold";
+    for (let c of coins) {
+        if (!c.collected)
+            ctx.fillRect(c.x + worldX, c.y, 10, 10);
+    }
+
+    // Enemigos
+    ctx.fillStyle = "#603000";
+    for (let e of enemies) {
+        if (!e.dead)
+            ctx.fillRect(e.x + worldX, e.y, e.w, e.h);
+    }
 
     // Mario
-    ctx.fillStyle = "red";
+    ctx.fillStyle = player.alive ? "red" : "black";
     ctx.fillRect(player.x, player.y, player.w, player.h);
+
+    // HUD
+    ctx.fillStyle = "white";
+    ctx.font = "16px Arial";
+    ctx.fillText("Coins: " + player.coins, 10, 20);
 }
 
 function update() {
